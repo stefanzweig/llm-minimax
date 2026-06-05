@@ -10,7 +10,7 @@ dependencies = [
     "llm>=0.27",
     "httpx",
 ]
-requires-python = ">=3.10"
+requires-python = ">=3.9"
 
 [project.urls]
 Homepage = "https://github.com/stefanzweig/llm-minimax"
