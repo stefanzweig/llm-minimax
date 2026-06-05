@@ -1,0 +1,26 @@
+[project]
+name = "llm-minimax"
+version = "0.1"
+description = "LLM plugin to access MiniMax models (M1, M2, etc.) via API"
+readme = "README.md"
+authors = [{name = "Stefan Zweig"}]
+license = "Apache-2.0"
+classifiers = []
+dependencies = [
+    "llm>=0.27",
+    "httpx",
+]
+requires-python = ">=3.10"
+
+[project.urls]
+Homepage = "https://github.com/stefanzweig/llm-minimax"
+Changelog = "https://github.com/stefanzweig/llm-minimax/releases"
+Issues = "https://github.com/stefanzweig/llm-minimax/issues"
+CI = "https://github.com/stefanzweig/llm-minimax/actions"
+
+[project.entry-points.llm]
+minimax = "llm_minimax"
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
