@@ -42,10 +42,14 @@ llm "Tell me a joke about artificial intelligence"
 
 ## Available models
 
-- `minimax/MiniMax-M2.1` - Latest flagship model, strong reasoning capabilities
+- `minimax/MiniMax-M3` - Latest flagship model, 1M context, native multimodal, frontier coding (released 2026-05-31)
+- `minimax/MiniMax-M2.7` - Strong reasoning and general tasks
+- `minimax/MiniMax-M2.5` - Enhanced reasoning capabilities
+- `minimax/MiniMax-M2.1` - Previous generation flagship, strong reasoning capabilities
 - `minimax/MiniMax-M1` - Previous generation model
 - `minimax/MiniMax-Text-01` - Text-optimized model
 - `minimax/MiniMax-VL-01` - Vision-language model
+- `minimax/MiniMax-Code` - Coding-specialized model
 
 All of these models have aliases that omit the `minimax/` prefix, for example:
 

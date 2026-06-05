@@ -9,10 +9,14 @@ API_BASE = "https://api.minimaxi.com/v1"
 
 # Available MiniMax models
 MODEL_IDS = [
+    "MiniMax-M3",
+    "MiniMax-M2.7",
+    "MiniMax-M2.5",
     "MiniMax-M2.1",
     "MiniMax-M1",
     "MiniMax-Text-01",
     "MiniMax-VL-01",
+    "MiniMax-Code",
 ]
 
 
