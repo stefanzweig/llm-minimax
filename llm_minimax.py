@@ -40,6 +40,14 @@ class _SharedMiniMax:
     supports_schema = True
     supports_tools = True
 
+    # Supported attachment types (images for vision models like M3, VL-01)
+    attachment_types = {
+        "image/png",
+        "image/jpeg",
+        "image/webp",
+        "image/gif",
+    }
+
     class Options(llm.Options):
         temperature: Optional[float] = Field(
             description=(
@@ -95,20 +103,8 @@ class _SharedMiniMax:
         if conversation:
             for response in conversation.responses:
                 # User message
-                user_content = response.prompt.prompt
-                if response.prompt.attachments:
-                    # Handle attachments (images, etc.)
-                    content = [{"type": "text", "text": user_content}] if user_content else []
-                    for attachment in response.prompt.attachments:
-                        content.append({
-                            "type": "image_url",
-                            "image_url": {
-                                "url": attachment.url or f"data:{attachment.resolve_type()};base64,{attachment.base64_content()}"
-                            }
-                        })
-                    messages.append({"role": "user", "content": content if content else user_content})
-                else:
-                    messages.append({"role": "user", "content": user_content})
+                user_msg = self._build_user_message(response.prompt)
+                messages.append(user_msg)
 
                 # Assistant message
                 assistant_text = response.text_or_raise()
@@ -116,20 +112,48 @@ class _SharedMiniMax:
                     messages.append({"role": "assistant", "content": assistant_text})
 
         # Add current prompt
-        if prompt.attachments:
-            content = [{"type": "text", "text": prompt.prompt}] if prompt.prompt else []
-            for attachment in prompt.attachments:
-                content.append({
-                    "type": "image_url",
-                    "image_url": {
-                        "url": attachment.url or f"data:{attachment.resolve_type()};base64,{attachment.base64_content()}"
-                    }
-                })
-            messages.append({"role": "user", "content": content})
-        else:
-            messages.append({"role": "user", "content": prompt.prompt})
+        messages.append(self._build_user_message(prompt))
 
         return messages
+
+    def _build_user_message(self, prompt):
+        """Build a user message, handling attachments if present."""
+        if not prompt.attachments:
+            # No attachments, simple text content
+            return {"role": "user", "content": prompt.prompt or ""}
+
+        # Has attachments, build multipart content
+        content = []
+
+        # Add text part if present
+        if prompt.prompt:
+            content.append({"type": "text", "text": prompt.prompt})
+
+        # Add each attachment
+        for attachment in prompt.attachments:
+            mime_type = attachment.resolve_type()
+
+            # Check if it's an image type we support
+            if mime_type.startswith("image/"):
+                # For URL attachments, use the URL directly
+                if attachment.url:
+                    content.append({
+                        "type": "image_url",
+                        "image_url": {"url": attachment.url}
+                    })
+                else:
+                    # For file/path/content attachments, use base64 data URL
+                    b64 = attachment.base64_content()
+                    content.append({
+                        "type": "image_url",
+                        "image_url": {"url": f"data:{mime_type};base64,{b64}"}
+                    })
+
+        # If only attachments and no text, ensure we have content
+        if not content:
+            return {"role": "user", "content": ""}
+
+        return {"role": "user", "content": content}
 
     def build_request_body(self, prompt, conversation):
         """Build the request body for the API call."""

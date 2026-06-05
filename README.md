@@ -40,6 +40,23 @@ llm models default MiniMax-M2.1
 llm "Tell me a joke about artificial intelligence"
 ```
 
+## Images / Attachments
+
+Multi-modal models like `MiniMax-M3` and `MiniMax-VL-01` support image input via the `-a` flag:
+
+```bash
+# Image file
+llm -m MiniMax-M3 "Describe this image" -a photo.jpg
+
+# Image URL
+llm -m MiniMax-M3 "What's in this picture?" -a https://example.com/image.png
+
+# Multiple images
+llm -m MiniMax-M3 "Compare these two images" -a img1.jpg -a img2.jpg
+```
+
+Supported image types: PNG, JPEG, WebP, GIF.
+
 ## Available models
 
 - `minimax/MiniMax-M3` - Latest flagship model, 1M context, native multimodal, frontier coding (released 2026-05-31)
