@@ -85,6 +85,7 @@ The following options are supported:
 | `max_tokens` | int | Maximum tokens to generate |
 | `timeout` | float | Request timeout in seconds |
 | `json_object` | bool | Force JSON output |
+| `schema_multi` | bool | Enable multi-turn schema validation |
 
 Example with options:
 
@@ -100,6 +101,47 @@ Use `-o json_object 1` to force the output to be JSON:
 llm -m MiniMax-M2.1 -o json_object 1 \
   'List 3 cities in California as JSON: [{"name": "..."}]'
 ```
+
+## Structured Output with Schema
+
+Use `--schema` to enforce a JSON schema on the output:
+
+```bash
+llm -m MiniMax-M2.1 --schema '{
+  "type": "object",
+  "properties": {
+    "cities": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {"type": "string"},
+          "population": {"type": "integer"}
+        },
+        "required": ["name", "population"]
+      }
+    }
+  },
+  "required": ["cities"]
+}' 'List 3 major cities in California with their populations'
+```
+
+### Multi-turn Schema Validation
+
+Use `-o schema_multi 1` with `--schema` to enforce schema validation across all turns in a conversation:
+
+```bash
+llm chat -m MiniMax-M2.1 --schema '{
+  "type": "object",
+  "properties": {
+    "answer": {"type": "string"},
+    "confidence": {"type": "number"}
+  },
+  "required": ["answer", "confidence"]
+}' -o schema_multi 1
+```
+
+When `schema_multi` is enabled, the model is instructed to return valid JSON conforming to the schema in every response, not just the final one. This is useful for structured conversations where you need consistent output format throughout.
 
 ## Chat
 

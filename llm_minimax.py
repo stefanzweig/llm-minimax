@@ -86,6 +86,15 @@ class _SharedMiniMax:
             description="Force the output to be valid JSON.",
             default=None,
         )
+        schema_multi: Optional[bool] = Field(
+            description=(
+                "Enable multi-turn schema validation. When enabled, the schema "
+                "will be applied to each turn in the conversation, not just the "
+                "final response. Useful for structured output across multiple "
+                "interactions."
+            ),
+            default=None,
+        )
 
     def __init__(self, model_id):
         self.model_id = "minimax/{}".format(model_id)
@@ -95,9 +104,27 @@ class _SharedMiniMax:
         """Build the messages array from prompt and conversation history."""
         messages = []
 
-        # Add system message if present
+        # Build system message
+        system_parts = []
+        
+        # Add original system message if present
         if prompt.system:
-            messages.append({"role": "system", "content": prompt.system})
+            system_parts.append(prompt.system)
+        
+        # Add schema instruction for multi-turn schema validation
+        if prompt.schema and prompt.options and prompt.options.schema_multi:
+            schema_instruction = (
+                "You must respond with valid JSON that conforms to the provided schema. "
+                "This applies to every response in the conversation, not just the final one."
+            )
+            system_parts.append(schema_instruction)
+        
+        # Add combined system message
+        if system_parts:
+            messages.append({
+                "role": "system", 
+                "content": "\n\n".join(system_parts)
+            })
 
         # Add conversation history
         if conversation:
