@@ -91,13 +91,104 @@ class _SharedMiniMax:
         self.model_id = "minimax/{}".format(model_id)
         self.minimax_model_id = model_id
 
+    @staticmethod
+    def _longest_tag_prefix_suffix(text, tag):
+        """Return length of text suffix that is also a prefix of tag."""
+        text = text.lower()
+        for length in range(min(len(text), len(tag) - 1), 0, -1):
+            if tag.startswith(text[-length:]):
+                return length
+        return 0
+
+    class ThinkTagFilter:
+        """Remove MiniMax <think>...</think> blocks across stream chunks."""
+
+        def __init__(self):
+            self.pending = ""
+            self.in_think = False
+            self.removed_thinking = False
+
+        def feed(self, text):
+            self.pending += text
+            output = []
+
+            while self.pending:
+                pending_lower = self.pending.lower()
+
+                if self.in_think:
+                    end = pending_lower.find("</think>")
+                    if end == -1:
+                        keep = _SharedMiniMax._longest_tag_prefix_suffix(
+                            self.pending, "</think>"
+                        )
+                        self.pending = self.pending[-keep:] if keep else ""
+                        return "".join(output)
+                    self.pending = self.pending[end + len("</think>"):]
+                    self.in_think = False
+                    continue
+
+                start = pending_lower.find("<think>")
+                if start == -1:
+                    keep = _SharedMiniMax._longest_tag_prefix_suffix(
+                        self.pending, "<think>"
+                    )
+                    emit_length = len(self.pending) - keep
+                    output.append(self.pending[:emit_length])
+                    self.pending = self.pending[emit_length:]
+                    return "".join(output)
+
+                output.append(self.pending[:start])
+                self.pending = self.pending[start + len("<think>"):]
+                self.in_think = True
+                self.removed_thinking = True
+
+            return "".join(output)
+
+        def flush(self):
+            if self.in_think:
+                self.pending = ""
+                return ""
+            text = self.pending
+            self.pending = ""
+            return text
+
+    def structured_output_instruction(self, prompt):
+        """Instruction fallback for MiniMax models that ignore response_format."""
+        if prompt.schema:
+            schema_json = json.dumps(
+                prompt.schema, ensure_ascii=False, separators=(",", ":")
+            )
+            return (
+                "You must respond with valid JSON only. Do not include markdown, "
+                "code fences, explanations, or <think> tags. The JSON must conform "
+                f"exactly to this JSON Schema: {schema_json}"
+            )
+        if prompt.options and prompt.options.json_object:
+            return (
+                "You must respond with a valid JSON object only. Do not include "
+                "markdown, code fences, explanations, or <think> tags."
+            )
+        return None
+
+    @staticmethod
+    def strip_thinking(text):
+        filter_ = _SharedMiniMax.ThinkTagFilter()
+        return filter_.feed(text) + filter_.flush()
+
     def build_messages(self, prompt, conversation):
         """Build the messages array from prompt and conversation history."""
         messages = []
 
-        # Add system message if present
-        if prompt.system:
-            messages.append({"role": "system", "content": prompt.system})
+        # Add system message if present, plus structured-output guidance for
+        # MiniMax models that accept response_format but do not enforce it.
+        system_parts = [
+            part for part in (
+                prompt.system,
+                self.structured_output_instruction(prompt),
+            ) if part
+        ]
+        if system_parts:
+            messages.append({"role": "system", "content": "\n\n".join(system_parts)})
 
         # Add conversation history
         if conversation:
@@ -107,7 +198,7 @@ class _SharedMiniMax:
                 messages.append(user_msg)
 
                 # Assistant message
-                assistant_text = response.text_or_raise()
+                assistant_text = self.strip_thinking(response.text_or_raise())
                 if assistant_text:
                     messages.append({"role": "assistant", "content": assistant_text})
 
@@ -269,6 +360,11 @@ class MiniMaxModel(_SharedMiniMax, llm.KeyModel):
 
         gathered_chunks = []
         tool_call_accumulators = {}
+        content_filter = self.ThinkTagFilter()
+        structured_output = bool(
+            prompt.schema or (prompt.options and prompt.options.json_object)
+        )
+        emitted_text = False
 
         with httpx.stream(
             "POST",
@@ -295,7 +391,14 @@ class MiniMaxModel(_SharedMiniMax, llm.KeyModel):
                 # Extract and yield text content
                 text = self.extract_text(chunk)
                 if text:
-                    yield text
+                    text = content_filter.feed(text)
+                    if (
+                        structured_output or content_filter.removed_thinking
+                    ) and not emitted_text:
+                        text = text.lstrip()
+                    if text:
+                        emitted_text = True
+                        yield text
 
                 # Accumulate tool calls
                 tool_calls = self.extract_tool_calls(chunk)
@@ -321,6 +424,15 @@ class MiniMaxModel(_SharedMiniMax, llm.KeyModel):
                         input=usage.get("prompt_tokens"),
                         output=usage.get("completion_tokens"),
                     )
+
+        remaining_text = content_filter.flush()
+        if remaining_text:
+            if (
+                structured_output or content_filter.removed_thinking
+            ) and not emitted_text:
+                remaining_text = remaining_text.lstrip()
+            if remaining_text:
+                yield remaining_text
 
         # Process accumulated tool calls
         for idx, tc in sorted(tool_call_accumulators.items()):
@@ -351,6 +463,11 @@ class AsyncMiniMaxModel(_SharedMiniMax, llm.AsyncKeyModel):
 
         gathered_chunks = []
         tool_call_accumulators = {}
+        content_filter = self.ThinkTagFilter()
+        structured_output = bool(
+            prompt.schema or (prompt.options and prompt.options.json_object)
+        )
+        emitted_text = False
 
         async with httpx.AsyncClient() as client:
             async with client.stream(
@@ -378,7 +495,14 @@ class AsyncMiniMaxModel(_SharedMiniMax, llm.AsyncKeyModel):
                     # Extract and yield text content
                     text = self.extract_text(chunk)
                     if text:
-                        yield text
+                        text = content_filter.feed(text)
+                        if (
+                            structured_output or content_filter.removed_thinking
+                        ) and not emitted_text:
+                            text = text.lstrip()
+                        if text:
+                            emitted_text = True
+                            yield text
 
                     # Accumulate tool calls
                     tool_calls = self.extract_tool_calls(chunk)
@@ -404,6 +528,15 @@ class AsyncMiniMaxModel(_SharedMiniMax, llm.AsyncKeyModel):
                             input=usage.get("prompt_tokens"),
                             output=usage.get("completion_tokens"),
                         )
+
+        remaining_text = content_filter.flush()
+        if remaining_text:
+            if (
+                structured_output or content_filter.removed_thinking
+            ) and not emitted_text:
+                remaining_text = remaining_text.lstrip()
+            if remaining_text:
+                yield remaining_text
 
         # Process accumulated tool calls
         for idx, tc in sorted(tool_call_accumulators.items()):

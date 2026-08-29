@@ -1,6 +1,6 @@
 [project]
 name = "llm-minimax"
-version = "0.1"
+version = "0.3"
 description = "LLM plugin to access MiniMax models (M1, M2, etc.) via API"
 readme = "README.md"
 authors = [{name = "Stefan Zweig"}]
