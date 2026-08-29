@@ -86,15 +86,6 @@ class _SharedMiniMax:
             description="Force the output to be valid JSON.",
             default=None,
         )
-        schema_multi: Optional[bool] = Field(
-            description=(
-                "Enable multi-turn schema validation. When enabled, the schema "
-                "will be applied to each turn in the conversation, not just the "
-                "final response. Useful for structured output across multiple "
-                "interactions."
-            ),
-            default=None,
-        )
 
     def __init__(self, model_id):
         self.model_id = "minimax/{}".format(model_id)
@@ -104,27 +95,9 @@ class _SharedMiniMax:
         """Build the messages array from prompt and conversation history."""
         messages = []
 
-        # Build system message
-        system_parts = []
-        
-        # Add original system message if present
+        # Add system message if present
         if prompt.system:
-            system_parts.append(prompt.system)
-        
-        # Add schema instruction for multi-turn schema validation
-        if prompt.schema and prompt.options and prompt.options.schema_multi:
-            schema_instruction = (
-                "You must respond with valid JSON that conforms to the provided schema. "
-                "This applies to every response in the conversation, not just the final one."
-            )
-            system_parts.append(schema_instruction)
-        
-        # Add combined system message
-        if system_parts:
-            messages.append({
-                "role": "system", 
-                "content": "\n\n".join(system_parts)
-            })
+            messages.append({"role": "system", "content": prompt.system})
 
         # Add conversation history
         if conversation:
@@ -213,10 +186,21 @@ class _SharedMiniMax:
             ]
 
         # Add JSON schema support
+        # MiniMax's API requires a `name` field inside `json_schema`;
+        # derive one from prompt.schema.name if present, else fall back to
+        # the model id so the request isn't rejected with error 2013.
         if prompt.schema:
+            schema_name = (
+                getattr(prompt.schema, "name", None)
+                if not isinstance(prompt.schema, dict)
+                else prompt.schema.get("name")
+            ) or self.minimax_model_id
             body["response_format"] = {
                 "type": "json_schema",
-                "json_schema": {"schema": prompt.schema},
+                "json_schema": {
+                    "name": schema_name,
+                    "schema": prompt.schema,
+                },
             }
         elif prompt.options and prompt.options.json_object:
             body["response_format"] = {"type": "json_object"}
@@ -293,6 +277,11 @@ class MiniMaxModel(_SharedMiniMax, llm.KeyModel):
             json=body,
             timeout=prompt.options.timeout,
         ) as http_response:
+            if http_response.status_code != 200:
+                raise llm.ModelError(
+                    f"MiniMax API error {http_response.status_code}: "
+                    f"{http_response.read().text[:500]}"
+                )
             for line in http_response.iter_lines():
                 line = line.strip()
                 if not line:
@@ -371,6 +360,11 @@ class AsyncMiniMaxModel(_SharedMiniMax, llm.AsyncKeyModel):
                 json=body,
                 timeout=prompt.options.timeout,
             ) as http_response:
+                if http_response.status_code != 200:
+                    raise llm.ModelError(
+                        f"MiniMax API error {http_response.status_code}: "
+                        f"{http_response.read().text[:500]}"
+                    )
                 async for line in http_response.aiter_lines():
                     line = line.strip()
                     if not line:
